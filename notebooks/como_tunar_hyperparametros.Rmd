@@ -1,0 +1,82 @@
+---
+title: 'Como Tunar Hiperparâmetros de Machine Learning Sem Perder Tempo'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(reticulate)
+library(tidyverse)
+
+data <- read_csv("data/winequality-red.csv") %>% 
+    mutate(vinho_bom = ifelse(quality %in% c(7,8), 1, 0))
+
+data %>% 
+    count(vinho_bom)
+```
+
+
+```{python}
+import pandas as pd
+import numpy as np
+df = r.data
+df.head()
+
+
+from lightgbm import LGBMClassifier
+from sklearn.model_selection import train_test_split
+Xtrain, Xtest, ytrain, ytest = train_test_split(df.iloc[:,:-2], df['vinho_bom'], train_size = 0.5,
+                                                random_state=0)
+Xtrain.shape, Xtest.shape, ytrain.shape, ytest.shape
+
+model = LGBMClassifier(random_state=0)
+model.fit(Xtrain, ytrain)
+from sklearn.metrics import roc_auc_score
+p = model.predict_proba(Xtest)[:,1]
+roc_auc_score(ytest, p)
+```
+
+# RANDOM SEARCH
+
+```{python}
+from skopt import dummy_minimize
+
+def treinar_modelo(params):
+    learning_rate = params[0]
+    num_leaves = params[1]
+    min_child_samples = params[2]
+    subsample = params[3]
+    colsample_bytree = params[4]
+    
+    print(params)
+    
+    model = LGBMClassifier(learning_rate=learning_rate, num_leaves=num_leaves, min_child_samples=min_child_samples, 
+                           subsample=subsample, colsample_bytree=colsample_bytree, random_state=0, subsample_freq=1, 
+                           n_estimators=100)
+    model.fit(Xtrain, ytrain)
+    
+    p = model.predict_proba(Xtest)[:,1]
+    
+    return -roc_auc_score(ytest, p)
+    
+    
+space = [(1e-3, 1e-1, 'log-uniform'), # learning rate
+         (2, 128), # num_leaves
+         (1, 100), # min_child_samples
+         (0.05, 1.0), # subsample
+         (0.1, 1.0)] # colsample bytree
+
+resultado = dummy_minimize(treinar_modelo, space, random_state=1, verbose=1, n_calls=30)
+```
+
+
+
+
+
+
+
+
