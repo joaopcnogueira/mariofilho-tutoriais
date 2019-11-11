@@ -1,0 +1,12 @@
+name: time_series
+title: time_series
+username:
+account: joaopcnogueira
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 1454443
+bundleId: 2580770
+url: https://joaopcnogueira.shinyapps.io/time_series/
+when: 1573495585.62158
+asMultiple: FALSE
+asStatic: FALSE

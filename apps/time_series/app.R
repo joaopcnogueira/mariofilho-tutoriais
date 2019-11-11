@@ -47,6 +47,10 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
+            selectInput("modelo", 
+                        "Modelo:", 
+                        choices = c("Baseline", "Random Forest")),
+            
             selectInput("variavel",
                         "Dimensão:",
                         choices = dimensoes)
