@@ -1,0 +1,140 @@
+---
+title: "Time Series"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# increase the number of decimal digits
+options(pillar.sigfig = 6)
+```
+
+# Loading data
+```{r}
+library(tidyverse)
+library(lubridate)
+
+dados <- read_tsv("data/gas-prices-in-brazil/2004-2019.tsv") %>% janitor::clean_names()
+dados %>% glimpse()
+
+dados %>% 
+    count(produto)
+
+# A columna data_final sempre está 6 dias depois da columns data_inicial
+dados %>% 
+  transmute(diff = data_final - data_inicial) %>% 
+  count(diff)
+
+# iremos modelar apenas o preço do óleo diesel
+diesel <- dados %>% 
+  filter(produto == "ÓLEO DIESEL") %>% 
+  select(data_final, regiao, estado, preco_medio_revenda)
+```
+
+# Validation
+```{r}
+split_date <- "2011-01-01"
+train <- diesel %>% filter(data_final < split_date)
+test <- diesel %>% filter(data_final >= split_date)
+```
+
+# Feature Engineering
+```{r}
+
+train <- train %>% 
+  group_by(estado) %>% 
+  mutate(lag_preco_medio_revenda = lag(preco_medio_revenda), 
+         diff_preco_medio_revenda = preco_medio_revenda - lag_preco_medio_revenda,
+         media_movel_5 = zoo::rollmean(preco_medio_revenda, k = 5, align = "right", fill = NA),
+         mes = month(data_final),
+         dia = day(data_final),
+         dia_da_semana = wday(data_final),
+         dia_do_ano = yday(data_final),
+         semana_do_ano = week(data_final)) %>% 
+  ungroup()
+
+test <- test %>% 
+  group_by(estado) %>% 
+  mutate(lag_preco_medio_revenda = lag(preco_medio_revenda), 
+         diff_preco_medio_revenda = preco_medio_revenda - lag_preco_medio_revenda,
+         media_movel_5 = zoo::rollmean(preco_medio_revenda, k = 5, align = "right", fill = NA),
+         mes = month(data_final),
+         dia = day(data_final),
+         dia_da_semana = wday(data_final),
+         dia_do_ano = yday(data_final),
+         semana_do_ano = week(data_final)) %>% 
+  ungroup()
+```
+
+
+```{r}
+# Custom yardstick metric implementation of root mean squared log error (rmsle)
+rmsle_vec <- function(truth, estimate, na_rm = TRUE, ...) {
+    
+  rmsle_impl <- function(truth, estimate) {
+    sqrt(mean((log1p(truth) - log1p(estimate))^2))
+  }
+  
+  yardstick::metric_vec_template(
+    metric_impl = rmsle_impl,
+    truth = truth, 
+    estimate = estimate,
+    na_rm = na_rm,
+    cls = "numeric",
+    ...
+  )
+}
+```
+
+# Baseline
+O nosso baseline será prever para hoje o valor de ontem (coluna lag_preco_medio_revenda será a nossa previsão)
+```{r}
+# validação no conjunto de teste
+rmsle_geral <- rmsle_vec(test$preco_medio_revenda, test$lag_preco_medio_revenda)
+
+# rmsle por estado
+test %>% 
+  group_by(estado) %>% 
+  summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
+  ungroup() %>% 
+  mutate(estado = fct_reorder(estado, rmsle)) %>% 
+  ggplot(aes(estado, rmsle)) +
+  geom_col(fill = "#42a5f5") +
+  labs(title = "RMSLE por Estado",
+       subtitle = "A linha vermelha representa o RMSLE geral",
+       x = "",
+       y = "RMSLE") +
+  geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+  coord_flip() +
+  theme_light()
+
+
+# rmsle por região
+test %>% 
+  group_by(regiao) %>% 
+  summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
+  ungroup() %>% 
+  mutate(regiao = fct_reorder(regiao, rmsle)) %>% 
+  ggplot(aes(regiao, rmsle)) +
+  geom_col(fill = "#42a5f5") +
+  labs(title = "RMSLE por Região",
+       subtitle = "A linha vermelha representa o RMSLE geral",
+       x = "",
+       y = "RMSLE") +
+  geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+  coord_flip() +
+  theme_light()
+
+# Salvando arquivo para o shiny app
+test %>% 
+  write_csv("apps/time_series/test_predictions.csv")
+
+```
+
+
+
+
+
+
+
