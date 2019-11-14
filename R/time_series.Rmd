@@ -14,6 +14,7 @@ options(pillar.sigfig = 6)
 ```{r}
 library(tidyverse)
 library(lubridate)
+source("R/Rutils/rmsle_metric.R")
 
 dados <- read_tsv("data/gas-prices-in-brazil/2004-2019.tsv") %>% janitor::clean_names()
 dados %>% glimpse()
@@ -41,7 +42,6 @@ test <- diesel %>% filter(data_final >= split_date)
 
 # Feature Engineering
 ```{r}
-
 train <- train %>% 
   group_by(estado) %>% 
   mutate(lag_preco_medio_revenda = lag(preco_medio_revenda), 
@@ -68,32 +68,14 @@ test <- test %>%
 ```
 
 
-```{r}
-# Custom yardstick metric implementation of root mean squared log error (rmsle)
-rmsle_vec <- function(truth, estimate, na_rm = TRUE, ...) {
-    
-  rmsle_impl <- function(truth, estimate) {
-    sqrt(mean((log1p(truth) - log1p(estimate))^2))
-  }
-  
-  yardstick::metric_vec_template(
-    metric_impl = rmsle_impl,
-    truth = truth, 
-    estimate = estimate,
-    na_rm = na_rm,
-    cls = "numeric",
-    ...
-  )
-}
-```
-
 # Baseline
 O nosso baseline será prever para hoje o valor de ontem (coluna lag_preco_medio_revenda será a nossa previsão)
 ```{r}
-# validação no conjunto de teste
+# VALIDAÇÃO NO CONJUNTO DE TESTE
 rmsle_geral <- rmsle_vec(test$preco_medio_revenda, test$lag_preco_medio_revenda)
 
-# rmsle por estado
+
+# VISUALIZAÇÕES DAS ERROS POR ESTADO E POR REGIÃO
 test %>% 
   group_by(estado) %>% 
   summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
@@ -109,8 +91,6 @@ test %>%
   coord_flip() +
   theme_light()
 
-
-# rmsle por região
 test %>% 
   group_by(regiao) %>% 
   summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
@@ -126,12 +106,71 @@ test %>%
   coord_flip() +
   theme_light()
 
-# Salvando arquivo para o shiny app
+# SALVANDO O ARQUIVO PARA O SHINY APP
 test %>% 
-  write_csv("apps/time_series/test_predictions.csv")
-
+  write_csv("apps/time_series/baseline_test_predictions.csv")
 ```
 
+
+# Machine Learning
+```{r}
+
+# TREINANDO UMA RANDOM FOREST
+library(parsnip)
+
+model <- rand_forest(mode = "regression", trees = 500) %>% 
+  set_engine("ranger") %>% 
+  fit(diff_preco_medio_revenda ~ mes + dia + dia_da_semana + dia_do_ano + semana_do_ano + lag_preco_medio_revenda, 
+      data = train %>% drop_na())
+
+# CONSTRUINDO AS PREVISÕES
+predictions_tbl <- model %>% 
+  predict(test %>% drop_na()) %>% 
+  bind_cols(test %>% drop_na()) %>% 
+  group_by(estado) %>% 
+  mutate(final_predictions = .pred + lag_preco_medio_revenda) %>% 
+  ungroup() %>% 
+  select(-.pred)
+  
+# RMSLE GERAL
+rmsle_geral <- predictions_tbl %>% 
+  rmsle(truth = preco_medio_revenda, estimate = final_predictions) %>% 
+  pull()
+
+
+# VISUALIZAÇÕES DAS PREDIÇÕES POR ESTADO E POR REGIÃO
+predictions_tbl %>% 
+  group_by(estado) %>% 
+  summarise(rmsle = rmsle_vec(preco_medio_revenda, final_predictions)) %>% 
+  ungroup() %>% 
+  mutate(estado = fct_reorder(estado, rmsle)) %>% 
+  ggplot(aes(estado, rmsle)) +
+  geom_col(fill = "#42a5f5") +
+  labs(title = "RMSLE por Estado",
+       subtitle = "A linha vermelha representa o RMSLE geral",
+       x = "",
+       y = "RMSLE") +
+  geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+  coord_flip() +
+  theme_light()  
+
+
+predictions_tbl %>% 
+  group_by(regiao) %>% 
+  summarise(rmsle = rmsle_vec(preco_medio_revenda, final_predictions)) %>% 
+  ungroup() %>% 
+  mutate(estado = fct_reorder(regiao, rmsle)) %>% 
+  ggplot(aes(regiao, rmsle)) +
+  geom_col(fill = "#42a5f5") +
+  labs(title = "RMSLE por Região",
+       subtitle = "A linha vermelha representa o RMSLE geral",
+       x = "",
+       y = "RMSLE") +
+  geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+  coord_flip() +
+  theme_light() 
+  
+```
 
 
 

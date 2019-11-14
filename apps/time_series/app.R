@@ -13,30 +13,7 @@ library(readr)
 library(ggplot2)
 library(forcats)
 library(stringr)
-
-# Custom yardstick metric implementation of root mean squared log error (rmsle)
-rmsle_vec <- function(truth, estimate, na_rm = TRUE, ...) {
-    
-    rmsle_impl <- function(truth, estimate) {
-        sqrt(mean((log1p(truth) - log1p(estimate))^2))
-    }
-    
-    yardstick::metric_vec_template(
-        metric_impl = rmsle_impl,
-        truth = truth, 
-        estimate = estimate,
-        na_rm = na_rm,
-        cls = "numeric",
-        ...
-    )
-}
-
-test_predictions <- read_csv("test_predictions.csv")
-
-dimensoes <- test_predictions %>% select(estado, regiao) %>% names()
-
-rmsle_geral <- rmsle_vec(test_predictions$preco_medio_revenda, 
-                         test_predictions$lag_preco_medio_revenda)
+source("rmsle_metric.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -53,7 +30,7 @@ ui <- fluidPage(
             
             selectInput("variavel",
                         "Dimensão:",
-                        choices = dimensoes)
+                        choices = c("estado", "regiao"))
         ),
 
         # Show a plot of the generated distribution
@@ -67,23 +44,56 @@ ui <- fluidPage(
 server <- function(input, output) {
 
     output$figplot <- renderPlot({
-            
-        var <- rlang::sym(input$variavel)
         
-        test_predictions %>% 
-            group_by(!!var) %>% 
-            summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
-            ungroup() %>% 
-            mutate(!!var := fct_reorder(!!var, rmsle)) %>% 
-            ggplot(aes(!!var, rmsle)) +
-            geom_col(fill = "#42a5f5") +
-            labs(title = paste("RMSLE por", input$variavel %>% str_to_title()),
-                 subtitle = "A linha vermelha representa o RMSLE geral",
-                 x = "",
-                 y = "RMSLE") +
-            geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
-            coord_flip() +
-            theme_light()
+        if(input$modelo == "Baseline") {
+            
+            predictions <- read_csv("baseline_test_predictions.csv")
+            
+            rmsle_geral <- rmsle_vec(predictions$preco_medio_revenda, 
+                                     predictions$lag_preco_medio_revenda)
+            
+            var <- rlang::sym(input$variavel)
+        
+            predictions %>% 
+                group_by(!!var) %>% 
+                summarise(rmsle = rmsle_vec(preco_medio_revenda, lag_preco_medio_revenda)) %>% 
+                ungroup() %>% 
+                mutate(!!var := fct_reorder(!!var, rmsle)) %>% 
+                ggplot(aes(!!var, rmsle)) +
+                geom_col(fill = "#42a5f5") +
+                labs(title = paste("RMSLE por", input$variavel %>% str_to_title()),
+                     subtitle = "A linha vermelha representa o RMSLE geral",
+                     x = "",
+                     y = "RMSLE") +
+                geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+                coord_flip() +
+                theme_light()
+            
+        } else if (input$modelo == "Random Forest") {
+            
+            predictions <- read_csv("random_forest_test_predictions.csv")
+            
+            rmsle_geral <- rmsle_vec(predictions$preco_medio_revenda, 
+                                     predictions$lag_preco_medio_revenda)
+            
+            var <- rlang::sym(input$variavel)
+            
+            predictions %>% 
+                group_by(!!var) %>% 
+                summarise(rmsle = rmsle_vec(preco_medio_revenda, final_predictions)) %>% 
+                ungroup() %>% 
+                mutate(!!var := fct_reorder(!!var, rmsle)) %>% 
+                ggplot(aes(!!var, rmsle)) +
+                geom_col(fill = "#42a5f5") +
+                labs(title = paste("RMSLE por", input$variavel %>% str_to_title()),
+                     subtitle = "A linha vermelha representa o RMSLE geral",
+                     x = "",
+                     y = "RMSLE") +
+                geom_hline(yintercept = rmsle_geral, color = "red", size = 1.1) +
+                coord_flip() +
+                theme_light()  
+            
+        }
     })
 }
 

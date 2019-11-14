@@ -5,8 +5,8 @@ account: joaopcnogueira
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 1454443
-bundleId: 2580770
+bundleId: 2589367
 url: https://joaopcnogueira.shinyapps.io/time_series/
-when: 1573495585.62158
+when: 1573743632.60177
 asMultiple: FALSE
 asStatic: FALSE
